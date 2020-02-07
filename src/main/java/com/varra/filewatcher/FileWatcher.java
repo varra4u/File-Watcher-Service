@@ -13,6 +13,10 @@ import com.varra.util.EnhancedTimerTask;
 import com.varra.util.FIFOQueue;
 import com.varra.util.GlobalThread;
 import com.varra.util.StringUtils;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -20,6 +24,7 @@ import java.io.FilenameFilter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.TimeUnit;
 
 import static java.util.Objects.nonNull;
 
@@ -40,6 +45,8 @@ import static java.util.Objects.nonNull;
  * @version 1.0
  * 
  */
+@Builder
+@AllArgsConstructor
 public class FileWatcher
 {
 	
@@ -47,16 +54,17 @@ public class FileWatcher
 	private static FileWatcher fileWatcher;
 	
 	/** The abstract file watcher. */
-	private final AbstractFileWatcher abstractFileWatcher;
+	@Getter(AccessLevel.NONE)
+	private final AbstractFileWatcher abstractFileWatcher = new AbstractFileWatcher();
 	
 	/** The listeners. */
-	private transient final Map<String, FileNotificationListener> listeners;
+	@Getter(AccessLevel.NONE)
+	private transient final Map<String, FileNotificationListener> listeners = new LinkedHashMap<>();
 	
-	/** The interval. */
-	private int interval;
-	
-	/** The is running. */
-	private volatile boolean isRunning;
+	/** The interval in milli seconds. */
+	private long interval = 2000;
+
+	private boolean initialScanNotificationRequired;
 	
 	/**
 	 * Instantiates a new file watcher.
@@ -64,58 +72,8 @@ public class FileWatcher
 	 */
 	private FileWatcher()
 	{
-		this.listeners = new LinkedHashMap<String, FileNotificationListener>();
-		abstractFileWatcher = new AbstractFileWatcher();
-		
-		setInterval(2000);
-	}
-	
-	/**
-	 * Sets the interval.
-	 * 
-	 * <br>
-	 * <br>
-	 * <b>Note: </b> There will be no impact if the {@link FileWatcher} is
-	 * already started.
-	 * 
-	 * @param interval
-	 *            the new interval
-	 */
-	public void setInterval(int interval)
-	{
-		this.interval = interval;
-	}
-	
-	/**
-	 * Gets the interval.
-	 * 
-	 * @return the interval
-	 */
-	public int getInterval()
-	{
-		return interval;
 	}
 
-	public static synchronized FileWatcher getFileWatcher()
-	{
-		return getFileWatcher(false);
-	}
-
-	/**
-	 * Gets the file watcher.
-	 * 
-	 * @return the file watcher
-	 */
-	public static synchronized FileWatcher getFileWatcher(boolean initialScanNotificationRequired)
-	{
-		if (fileWatcher == null)
-		{
-			fileWatcher = new FileWatcher();
-			fileWatcher.abstractFileWatcher.isFirstScanNotificationRequired = initialScanNotificationRequired;
-		}
-		return fileWatcher;
-	}
-	
 	/**
 	 * Registers file notification listener and starts notifying to the given
 	 * listener.
@@ -127,10 +85,11 @@ public class FileWatcher
 	 * @throws FileNotFoundException
 	 *             the file not found exception
 	 */
-	public synchronized void registerFileNotificationListener(FileNotificationListener listener, String directory)
+	public synchronized FileWatcher registerListener(FileNotificationListener listener, String directory)
 			throws FileNotFoundException
 	{
 		abstractFileWatcher.registerFileNotificationListener(listener, directory);
+		return this;
 	}
 	
 	/**
@@ -142,7 +101,7 @@ public class FileWatcher
 	 * @param dir
 	 *            the dir
 	 */
-	public synchronized void unRegisterFileNotificationListener(FileNotificationListener listener, String dir)
+	public synchronized void unRegisterListener(FileNotificationListener listener, String dir)
 	{
 		abstractFileWatcher.unRegisterFileNotificationListener(listener, dir);
 	}
@@ -151,21 +110,10 @@ public class FileWatcher
 	 * Starts the {@link FileWatcher} which monitors the files and directories
 	 * you have registered for notifications.
 	 */
-	public synchronized void start()
+	public synchronized FileWatcher start()
 	{
-		setRunning(true);
 		abstractFileWatcher.start();
-	}
-	
-	/**
-	 * Sets the running.
-	 * 
-	 * @param isRunning
-	 *            the isRunning to set
-	 */
-	private void setRunning(boolean isRunning)
-	{
-		this.isRunning = isRunning;
+		return this;
 	}
 	
 	/**
@@ -175,7 +123,7 @@ public class FileWatcher
 	 */
 	public boolean isRunning()
 	{
-		return isRunning;
+		return this.abstractFileWatcher.isCanceled();
 	}
 	
 	/**
@@ -187,10 +135,10 @@ public class FileWatcher
 	 * {@link #start()} method, but you have to register again for
 	 * notifications.
 	 */
-	public synchronized void stop()
+	public synchronized FileWatcher stop()
 	{
-		setRunning(false);
 		abstractFileWatcher.stop();
+		return this;
 	}
 	
 	/**
@@ -198,11 +146,10 @@ public class FileWatcher
 	 * stops the monitoring and notifying. <br>
 	 * <br>
 	 * <b>Note: </b>You can not start the {@link FileWatcher} again, that is
-	 * stopped using {@link #shutdown()}, instead use {@link #stop()}.
+	 * stopped using shutdown, instead use {@link #stop()}.
 	 */
 	public void shutdown()
 	{
-		setRunning(false);
 		abstractFileWatcher.shutdown();
 	}
 	
@@ -242,9 +189,8 @@ public class FileWatcher
 		/** The all filter. */
 		private final FilenameFilter allFilter;
 		
-		private final GlobalThread thread;
+		private GlobalThread thread;
 
-		private boolean isFirstScanNotificationRequired = true;
 		private boolean isFirstScan = true;
 
 		/**
@@ -255,14 +201,12 @@ public class FileWatcher
 		{
 			super(FileWatcher.class.getSimpleName());
 			
-			this.dirsMonitored = new FIFOQueue<FileInfo>();
-			this.filesMonitored = new FIFOQueue<FileInfo>();
-			this.createdFiles = new FIFOQueue<FileInfo>();
-			this.deletedFiles = new FIFOQueue<FileInfo>();
-			this.modifiedFiles = new FIFOQueue<FileInfo>();
-			this.tempFiles = new FIFOQueue<FileInfo>();
-			this.thread = GlobalThread.getGlobalThread(1);
-			thread.start();
+			this.dirsMonitored = new FIFOQueue<>();
+			this.filesMonitored = new FIFOQueue<>();
+			this.createdFiles = new FIFOQueue<>();
+			this.deletedFiles = new FIFOQueue<>();
+			this.modifiedFiles = new FIFOQueue<>();
+			this.tempFiles = new FIFOQueue<>();
 			
 			allFilter = (dir, name) -> DIRECTORIES_AND_FILES;
 		}
@@ -272,9 +216,12 @@ public class FileWatcher
 		 */
 		private void start()
 		{
+			this.thread = GlobalThread.getGlobalThread(1);
+			thread.start();
+
 			setPeriodic(true);
 			setDaemon(true);
-			setPeriod(getInterval());
+			setPeriod(interval);
 			
 			thread.onTimerTask(this);
 		}
@@ -284,10 +231,10 @@ public class FileWatcher
 		 */
 		private synchronized void stop()
 		{
-			/** Cancels the present . */
+			/* Cancels the present . */
 			cancel();
-			
-			/** Clears all the containers to free up the memory. */
+
+			/* Clears all the containers to free up the memory. */
 			dirsMonitored.clear();
 			filesMonitored.clear();
 			modifiedFiles.clear();
@@ -303,8 +250,8 @@ public class FileWatcher
 		private void shutdown()
 		{
 			this.stop();
-			
-			/** Stops the actual background thread. */
+
+			/* Stops the actual background thread. */
 			thread.shutdown();
 		}
 		
@@ -494,7 +441,7 @@ public class FileWatcher
 			// filesMonitored.addAll(modifiedFiles);
 			filesMonitored.addAll(createdFiles);
 
-			if (isFirstScanNotificationRequired || !isFirstScan) {
+			if (initialScanNotificationRequired || !isFirstScan) {
 				update();
 			}
 			isFirstScan = false;
@@ -518,6 +465,7 @@ public class FileWatcher
 		 */
 		protected void loadFiles(File directory)
 		{
+			// To add directories to the notified list.
 			if (directory.isDirectory())
 			{
 				final File[] files = directory.listFiles(allFilter);
@@ -528,15 +476,10 @@ public class FileWatcher
 						loadFiles(file);
 					}
 				}
-				
-				// To add directories to the notified list.
-				addToMonitoredFiles(directory.getAbsolutePath());
+
 			}
-			else
-			{
-				// To add leaf files to the notified list.
-				addToMonitoredFiles(directory.getAbsolutePath());
-			}
+			// To add leaf files to the notified list.
+			addToMonitoredFiles(directory.getAbsolutePath());
 		}
 		
 		/**
@@ -587,16 +530,13 @@ public class FileWatcher
 	 *            the arguments
 	 * @throws FileNotFoundException
 	 *             the file not found exception
-	 * @throws InterruptedException
-	 *             the interrupted exception
 	 */
-	public static void main(String[] args) throws FileNotFoundException, InterruptedException
-	{
-		final FileWatcher watcher = FileWatcher.getFileWatcher(false);
-		watcher.setInterval(5000);
-		watcher.registerFileNotificationListener(new AbstractFileNotificationListener(), "D:\\varra\\code\\own\\excel\\excel-manipulations\\lib");
-		watcher.start();
+	public static void main(String[] args) throws FileNotFoundException, InterruptedException {
+		final FileWatcher watcher = FileWatcher.builder().interval(5000).build()
+				.registerListener(new AbstractFileNotificationListener(), "\\varra\\code\\own\\files-to-be-monitored")
+				.start();
 
-
+		TimeUnit.SECONDS.sleep(100);
+		watcher.shutdown();
 	}
 }

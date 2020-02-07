@@ -4,7 +4,7 @@
 
 	<groupId>com.github.varra4u</groupId>
 	<artifactId>file-watcher-service</artifactId>
-	<version>1.0</version>
+	<version>1.0.0</version>
 	<packaging>jar</packaging>
 
 	<name>File Watcher</name>
@@ -56,6 +56,12 @@
 			<groupId>com.github.varra4u</groupId>
 			<artifactId>utils4j</artifactId>
 			<version>1.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<version>1.18.10</version>
+			<scope>compile</scope>
 		</dependency>
 	</dependencies>
 
