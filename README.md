@@ -12,12 +12,8 @@ File Watcher Service, that monitors the file system and notify the listeners.
  ```
  
 #
-
-##### Dev
-Need to run `mvn clean package install` from cmd prompt to to push the artifacts to maven.
  
- 
-### Getting a property (could be environment, properties files or Spring Context)
+### To use this, just a single statement, you will start getting the notifications!
  
 It provides a very flexible and convenient interface to monitor the file system:
  
