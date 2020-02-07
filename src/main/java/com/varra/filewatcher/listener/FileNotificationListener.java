@@ -8,6 +8,8 @@ package com.varra.filewatcher.listener;
 
 import com.varra.filewatcher.info.FileInfo;
 
+import static com.varra.filewatcher.listener.WatchEventType.*;
+
 /**
  * The Interface that emits the File Notifications to the registered users.
  * 
@@ -17,22 +19,26 @@ import com.varra.filewatcher.info.FileInfo;
  */
 public interface FileNotificationListener
 {
-	
+
+	void onWatchEvent(WatchEventType type, FileInfo fileInfo);
+
 	/**
 	 * On create file.
 	 * 
 	 * @param fileInfo
 	 *            the file info
 	 */
-	void onCreateFile(FileInfo fileInfo);
-	
+	default void onCreateFile(FileInfo fileInfo){
+		this.onWatchEvent(CREATE, fileInfo);
+	}
+
 	/**
 	 * On create directory.
 	 * 
 	 * @param fileInfo
 	 *            the file info
 	 */
-	void onCreateDirectory(FileInfo fileInfo);
+	default void onCreateDirectory(FileInfo fileInfo) {this.onWatchEvent(CREATE, fileInfo);};
 	
 	/**
 	 * On modify file.
@@ -42,7 +48,7 @@ public interface FileNotificationListener
 	 * @param newFileInfo
 	 *            the new file info
 	 */
-	void onModifyFile(FileInfo oldFileInfo, FileInfo newFileInfo);
+	default void onModifyFile(FileInfo oldFileInfo, FileInfo newFileInfo) {this.onWatchEvent(MODIFY, newFileInfo);};
 	
 	/**
 	 * On modify directory.
@@ -52,7 +58,7 @@ public interface FileNotificationListener
 	 * @param newFileInfo
 	 *            the new file info
 	 */
-	void onModifyDirectory(FileInfo oldFileInfo, FileInfo newFileInfo);
+	default void onModifyDirectory(FileInfo oldFileInfo, FileInfo newFileInfo) {this.onWatchEvent(MODIFY, newFileInfo);};
 	
 	/**
 	 * On delete file.
@@ -60,7 +66,7 @@ public interface FileNotificationListener
 	 * @param fileInfo
 	 *            the file info
 	 */
-	void onDeleteFile(FileInfo fileInfo);
+	default void onDeleteFile(FileInfo fileInfo) {this.onWatchEvent(DELETE, fileInfo);};
 	
 	/**
 	 * On delete directory.
@@ -68,5 +74,5 @@ public interface FileNotificationListener
 	 * @param fileInfo
 	 *            the file info
 	 */
-	void onDeleteDirectory(FileInfo fileInfo);
+	default void onDeleteDirectory(FileInfo fileInfo) {this.onWatchEvent(DELETE, fileInfo);};
 }

@@ -1,0 +1,12 @@
+.idea/*
+.idea/
+**/*.iml
+**/target/**
+.classpath
+.project
+**/.settings/*
+**/build.properties
+**/build.sh
+**/bin/**
+**/.DS_Store
+/target/

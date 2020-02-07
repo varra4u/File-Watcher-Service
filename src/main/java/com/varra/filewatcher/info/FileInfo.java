@@ -115,7 +115,7 @@ public class FileInfo implements Serializable
 	 * 
 	 * <p>
 	 * If this abstract pathname is already absolute, then the pathname string
-	 * is simply returned as if by the <code>{@link #getPath}</code> method. If
+	 * is simply returned as if by the <code>{@link File#getAbsolutePath()}</code> method. If
 	 * this abstract pathname is the empty abstract pathname then the pathname
 	 * string of the current user directory, which is named by the system
 	 * property <code>user.dir</code>, is returned. Otherwise this pathname is
@@ -128,7 +128,7 @@ public class FileInfo implements Serializable
 	 * 
 	 * @return The absolute pathname string denoting the same file or directory
 	 *         as this abstract pathname
-	 * @see java.io.File#isAbsolute()
+	 * @see File#getAbsolutePath()
 	 */
 	public String getAbsolutePath()
 	{

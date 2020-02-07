@@ -6,22 +6,27 @@
  */
 package com.varra.filewatcher;
 
+import com.varra.filewatcher.info.FileInfo;
+import com.varra.filewatcher.listener.AbstractFileNotificationListener;
+import com.varra.filewatcher.listener.FileNotificationListener;
+import com.varra.util.EnhancedTimerTask;
+import com.varra.util.FIFOQueue;
+import com.varra.util.GlobalThread;
+import com.varra.util.StringUtils;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FilenameFilter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.TimeUnit;
 
-import com.varra.filewatcher.info.FileInfo;
-import com.varra.filewatcher.listener.AbstractFileNotificationListener;
-import com.varra.filewatcher.listener.FileNotificationListener;
-import com.varra.log.Logger;
-import com.varra.log.MyLogLevel;
-import com.varra.util.EnhancedTimerTask;
-import com.varra.util.FIFOQueue;
-import com.varra.util.GlobalThread;
-import com.varra.util.StringUtils;
+import static java.util.Objects.nonNull;
 
 /**
  * 
@@ -36,14 +41,12 @@ import com.varra.util.StringUtils;
  * snippet in {@link FileNotificationListener} implementation, it may cause slow
  * down to your application speed.
  * 
- * @see {@link AbstractFileNotificationListener} or
- *      {@link FileNotificationListener} for notification types and information
- *      that will be emitted.
- * 
  * @author Rajakrishna V. Reddy
  * @version 1.0
  * 
  */
+@Builder
+@AllArgsConstructor
 public class FileWatcher
 {
 	
@@ -51,16 +54,17 @@ public class FileWatcher
 	private static FileWatcher fileWatcher;
 	
 	/** The abstract file watcher. */
-	private static AbstractFileWatcher abstractFileWatcher;
+	@Getter(AccessLevel.NONE)
+	private final AbstractFileWatcher abstractFileWatcher = new AbstractFileWatcher();
 	
 	/** The listeners. */
-	private transient final Map<String, FileNotificationListener> listeners;
+	@Getter(AccessLevel.NONE)
+	private transient final Map<String, FileNotificationListener> listeners = new LinkedHashMap<>();
 	
-	/** The interval. */
-	private int interval;
-	
-	/** The is running. */
-	private volatile boolean isRunning;
+	/** The interval in milli seconds. */
+	private long interval = 2000;
+
+	private boolean initialScanNotificationRequired;
 	
 	/**
 	 * Instantiates a new file watcher.
@@ -68,52 +72,8 @@ public class FileWatcher
 	 */
 	private FileWatcher()
 	{
-		this.listeners = new LinkedHashMap<String, FileNotificationListener>();
-		abstractFileWatcher = new AbstractFileWatcher();
-		
-		setInterval(2000);
 	}
-	
-	/**
-	 * Sets the interval.
-	 * 
-	 * <br>
-	 * <br>
-	 * <b>Note: </b> There will be no impact if the {@link FileWatcher} is
-	 * already started.
-	 * 
-	 * @param interval
-	 *            the new interval
-	 */
-	public void setInterval(int interval)
-	{
-		this.interval = interval;
-	}
-	
-	/**
-	 * Gets the interval.
-	 * 
-	 * @return the interval
-	 */
-	public int getInterval()
-	{
-		return interval;
-	}
-	
-	/**
-	 * Gets the file watcher.
-	 * 
-	 * @return the file watcher
-	 */
-	public static synchronized FileWatcher getFileWatcher()
-	{
-		if (fileWatcher == null)
-		{
-			fileWatcher = new FileWatcher();
-		}
-		return fileWatcher;
-	}
-	
+
 	/**
 	 * Registers file notification listener and starts notifying to the given
 	 * listener.
@@ -125,10 +85,11 @@ public class FileWatcher
 	 * @throws FileNotFoundException
 	 *             the file not found exception
 	 */
-	public synchronized void registerFileNotificationListener(FileNotificationListener listener, String directory)
+	public synchronized FileWatcher registerListener(FileNotificationListener listener, String directory)
 			throws FileNotFoundException
 	{
 		abstractFileWatcher.registerFileNotificationListener(listener, directory);
+		return this;
 	}
 	
 	/**
@@ -140,7 +101,7 @@ public class FileWatcher
 	 * @param dir
 	 *            the dir
 	 */
-	public synchronized void unRegisterFileNotificationListener(FileNotificationListener listener, String dir)
+	public synchronized void unRegisterListener(FileNotificationListener listener, String dir)
 	{
 		abstractFileWatcher.unRegisterFileNotificationListener(listener, dir);
 	}
@@ -148,35 +109,21 @@ public class FileWatcher
 	/**
 	 * Starts the {@link FileWatcher} which monitors the files and directories
 	 * you have registered for notifications.
-	 * 
-	 * @see {@link #stop()} and {@link #shutdown()} for stopping the
-	 *      {@link FileWatcher}.
 	 */
-	public synchronized void start()
+	public synchronized FileWatcher start()
 	{
-		setRunning(true);
 		abstractFileWatcher.start();
+		return this;
 	}
 	
 	/**
-	 * Sets the running.
-	 * 
-	 * @param isRunning
-	 *            the isRunning to set
-	 */
-	private void setRunning(boolean isRunning)
-	{
-		this.isRunning = isRunning;
-	}
-	
-	/**
-	 * Checks if the {@link TrapReceiverImpl} is running.
+	 * Checks if the {@link FileWatcher} is running.
 	 * 
 	 * @return the isRunning
 	 */
 	public boolean isRunning()
 	{
-		return isRunning;
+		return this.abstractFileWatcher.isCanceled();
 	}
 	
 	/**
@@ -188,10 +135,10 @@ public class FileWatcher
 	 * {@link #start()} method, but you have to register again for
 	 * notifications.
 	 */
-	public synchronized void stop()
+	public synchronized FileWatcher stop()
 	{
-		setRunning(false);
 		abstractFileWatcher.stop();
+		return this;
 	}
 	
 	/**
@@ -199,11 +146,10 @@ public class FileWatcher
 	 * stops the monitoring and notifying. <br>
 	 * <br>
 	 * <b>Note: </b>You can not start the {@link FileWatcher} again, that is
-	 * stopped using {@link #shutdown()}, instead use {@link #stop()}.
+	 * stopped using shutdown, instead use {@link #stop()}.
 	 */
 	public void shutdown()
 	{
-		setRunning(false);
 		abstractFileWatcher.shutdown();
 	}
 	
@@ -243,8 +189,10 @@ public class FileWatcher
 		/** The all filter. */
 		private final FilenameFilter allFilter;
 		
-		private final GlobalThread thread;
-		
+		private GlobalThread thread;
+
+		private boolean isFirstScan = true;
+
 		/**
 		 * Instantiates a new file watcher.
 		 * 
@@ -253,23 +201,14 @@ public class FileWatcher
 		{
 			super(FileWatcher.class.getSimpleName());
 			
-			this.dirsMonitored = new FIFOQueue<FileInfo>();
-			this.filesMonitored = new FIFOQueue<FileInfo>();
-			this.createdFiles = new FIFOQueue<FileInfo>();
-			this.deletedFiles = new FIFOQueue<FileInfo>();
-			this.modifiedFiles = new FIFOQueue<FileInfo>();
-			this.tempFiles = new FIFOQueue<FileInfo>();
-			this.thread = GlobalThread.getGlobalThread(1);
-			thread.start();
+			this.dirsMonitored = new FIFOQueue<>();
+			this.filesMonitored = new FIFOQueue<>();
+			this.createdFiles = new FIFOQueue<>();
+			this.deletedFiles = new FIFOQueue<>();
+			this.modifiedFiles = new FIFOQueue<>();
+			this.tempFiles = new FIFOQueue<>();
 			
-			allFilter = new FilenameFilter()
-			{
-				
-				public boolean accept(File dir, String name)
-				{
-					return DIRECTORIES_AND_FILES;
-				}
-			};
+			allFilter = (dir, name) -> DIRECTORIES_AND_FILES;
 		}
 		
 		/**
@@ -277,9 +216,12 @@ public class FileWatcher
 		 */
 		private void start()
 		{
+			this.thread = GlobalThread.getGlobalThread(1);
+			thread.start();
+
 			setPeriodic(true);
 			setDaemon(true);
-			setPeriod(getInterval());
+			setPeriod(interval);
 			
 			thread.onTimerTask(this);
 		}
@@ -289,10 +231,10 @@ public class FileWatcher
 		 */
 		private synchronized void stop()
 		{
-			/** Cancels the present . */
+			/* Cancels the present . */
 			cancel();
-			
-			/** Clears all the containers to free up the memory. */
+
+			/* Clears all the containers to free up the memory. */
 			dirsMonitored.clear();
 			filesMonitored.clear();
 			modifiedFiles.clear();
@@ -308,8 +250,8 @@ public class FileWatcher
 		private void shutdown()
 		{
 			this.stop();
-			
-			/** Stops the actual background thread. */
+
+			/* Stops the actual background thread. */
 			thread.shutdown();
 		}
 		
@@ -407,7 +349,7 @@ public class FileWatcher
 			{
 				synchronized (listeners)
 				{
-					/** To restrict the parent file notifications to child registrar */
+					// To restrict the parent file notifications to child registrar
 					if (fileInfo.getAbsolutePath().contains(listener.getKey()))
 					{
 						if (fileInfo.isDirectory())
@@ -435,7 +377,7 @@ public class FileWatcher
 			{
 				synchronized (listeners)
 				{
-					/** To restrict the parent file notifications to child registrar */
+					// To restrict the parent file notifications to child registrar
 					if (fileInfo.getAbsolutePath().contains(listener.getKey()))
 					{
 						if (fileInfo.isDirectory())
@@ -465,7 +407,7 @@ public class FileWatcher
 			{
 				synchronized (listeners)
 				{
-					/** To restrict the parent file notifications to child registrar */   
+					// To restrict the parent file notifications to child registrar
 					if (oldFileInfo.getAbsolutePath().contains(listener.getKey()))
 					{
 						if (oldFileInfo.isDirectory())
@@ -498,9 +440,12 @@ public class FileWatcher
 			filesMonitored.addAll(tempFiles);
 			// filesMonitored.addAll(modifiedFiles);
 			filesMonitored.addAll(createdFiles);
-			
-			update();
-			
+
+			if (initialScanNotificationRequired || !isFirstScan) {
+				update();
+			}
+			isFirstScan = false;
+
 			/*
 			 * System.out.println("deleted: " + deletedFiles);
 			 * System.out.println("created: " + createdFiles);
@@ -520,22 +465,21 @@ public class FileWatcher
 		 */
 		protected void loadFiles(File directory)
 		{
+			// To add directories to the notified list.
 			if (directory.isDirectory())
 			{
 				final File[] files = directory.listFiles(allFilter);
-				for (final File file : files)
+				if (nonNull(files))
 				{
-					loadFiles(file);
+					for (final File file : files)
+					{
+						loadFiles(file);
+					}
 				}
-				
-				/** To add directories to the notified list. */
-				addToMonitoredFiles(directory.getAbsolutePath());
+
 			}
-			else
-			{
-				/** To add leaf files to the notified list. */
-				addToMonitoredFiles(directory.getAbsolutePath());
-			}
+			// To add leaf files to the notified list.
+			addToMonitoredFiles(directory.getAbsolutePath());
 		}
 		
 		/**
@@ -579,14 +523,6 @@ public class FileWatcher
 		}
 	}
 	
-	public static void badSwap(Integer var1, int var2)
-	{
-		//System.out.println(var1+", "+var2);
-		var1 = 100;
-		
-	 // System.out.println(var1+", "+var2);
-	}
-	
 	/**
 	 * The main method.
 	 * 
@@ -594,22 +530,13 @@ public class FileWatcher
 	 *            the arguments
 	 * @throws FileNotFoundException
 	 *             the file not found exception
-	 * @throws InterruptedException
-	 *             the interrupted exception
 	 */
-	public static void main(String[] args) throws FileNotFoundException, InterruptedException
-	{
-		Logger.getLogger(FileWatcher.class).setLevel(MyLogLevel.INFO);
-		final FileWatcher watcher = FileWatcher.getFileWatcher();
-		watcher.setInterval(5000);
-		watcher.registerFileNotificationListener(new AbstractFileNotificationListener(), "/home/krishna/Download/SpringMVCForm");
-		watcher.start();
-		
-		int var1 = 5;
-		int var2 = 10;
-		
-		System.out.println(var1+", "+var2);
-		badSwap(var1, var2);
-		System.out.println(var1+", "+var2);
+	public static void main(String[] args) throws FileNotFoundException, InterruptedException {
+		final FileWatcher watcher = FileWatcher.builder().interval(5000).build()
+				.registerListener(new AbstractFileNotificationListener(), "\\varra\\code\\own\\files-to-be-monitored")
+				.start();
+
+		TimeUnit.SECONDS.sleep(100);
+		watcher.shutdown();
 	}
 }
